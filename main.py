@@ -1,6 +1,11 @@
 import requests
 import html
 import re
+import psycopg2
+import pandas as pd
+from sqlalchemy import create_engine
+
+from config import *
 
 def parse_hh_raw_page(raw_html):
     # 1. Раскодируем HTML-сущности (превращаем &#34; в обычные кавычки ")
@@ -103,21 +108,70 @@ def parse_hh_raw_page(raw_html):
 
     return vacancies
 
+def to_db(vacancies:list):
+    # Подсоединение базы данных
+    connection = psycopg2.connect (dbname=f'{DB_name}',
+                                    user=f'{DB_User}',
+                                   password =f'{DB_password}',
+                                   host=f'{DB_host}',
+                                   port=f'{DB_port}')
+    connection.autocommit = True
+    # Курсор 
+    cur = connection.cursor()
+
+    df = pd.DataFrame(vacancies)
+    print (df.columns)
+
+    cur.execute(f'''CREATE TABLE IF NOT EXISTS it (
+                id INT PRIMARY KEY,
+                title VARCHAR(50) NOT NULL,
+                company TEXT,
+                salary TEXT,
+                experience TEXT,
+                schedule TEXT,
+                employment TEXT);
+                ''')
+    cur.execute('''SELECT title FROM it LIMIT 1;''')
+    print(234)
+    vacancies = cur.fetchone()
+    print(1)
+    engine = create_engine (f'postgresql+psycopg2://{DB_User}:{DB_password}@{DB_host}:{DB_port}/{DB_name}',
+                            pool_pre_ping=True, # Важные части для разбора
+                            connect_args={"options": "-c statement_timeout=15000"},)
+    if vacancies is None:
+        df.to_sql(name='it',
+                  con=engine,
+                  if_exists='replace',
+                  )
+    print(2)
+    cur.execute('SELECT title FROM it')
+    vacancies = cur.fetchall()
+
+    #ВАЖНО
+    """кортежи → список строк"""
+    titles = [row[0] for row in vacancies]
+    df = df[~df['company'].isin(titles)]
+    print(df.head())
+
+    cur.close()
+    connection.close()
+    engine.dispose()
+
+
 url_hh = 'https://spb.hh.ru/search/vacancy?text=python&ored_clusters=true&area=2&page=1'
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
 response = requests.get(url_hh, headers=headers)
-# print(response.text)
-with open("page.html", 'w') as file:
-    file.write(response.text)
+
 parsed_jobs = parse_hh_raw_page(response.text)
 
-for job in parsed_jobs:
-    print(f"🔹 {job['title']} (ID: {job['id']})")
-    print(f"🏢 Компания: {job['company']}")
-    print(f"💰 Зарплата: {job['salary']}")
-    print(f"⏳ Опыт: {job['experience']}")
-    print(f"🕒 График: {job['schedule']}, {job['employment']}")
-    print("-" * 50)
+to_db(parsed_jobs)
+# for job in parsed_jobs:
+#     print(f"🔹 {job['title']} (ID: {job['id']})")
+#     print(f"Компания: {job['company']}")
+#     print(f"Зарплата: {job['salary']}")
+#     print(f"Опыт: {job['experience']}")
+#     print(f"График: {job['schedule']}, {job['employment']}")
+#     print("-" * 50)

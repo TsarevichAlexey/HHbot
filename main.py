@@ -108,7 +108,7 @@ def parse_hh_raw_page(raw_html):
 
     return vacancies
 
-def to_db(vacancies:list):
+def to_db(vacancies:list,df:pd.DataFrame):
     # Подсоединение базы данных
     connection = psycopg2.connect (dbname=f'{DB_name}',
                                     user=f'{DB_User}',
@@ -119,8 +119,6 @@ def to_db(vacancies:list):
     # Курсор 
     cur = connection.cursor()
 
-    df = pd.DataFrame(vacancies)
-    print (df.columns)
 
     cur.execute(f'''CREATE TABLE IF NOT EXISTS it (
                 id INT PRIMARY KEY,
@@ -142,36 +140,50 @@ def to_db(vacancies:list):
         df.to_sql(name='it',
                   con=engine,
                   if_exists='replace',
+                  index=False
                   )
-    print(2)
+
     cur.execute('SELECT title FROM it')
-    vacancies = cur.fetchall()
+    vacancies = cur.fetchall() #Список из кортежей из 1 слова
 
     #ВАЖНО
     """кортежи → список строк"""
     titles = [row[0] for row in vacancies]
     df = df[~df['company'].isin(titles)]
-    print(df.head())
+
+    df.to_sql(name='it',
+              con=engine,
+              if_exists='append',
+              index=False)
 
     cur.close()
     connection.close()
     engine.dispose()
+    return df
 
 
-url_hh = 'https://spb.hh.ru/search/vacancy?text=python&ored_clusters=true&area=2&page=1'
+url_hh = [f'https://spb.hh.ru/search/vacancy?text=python&ored_clusters=true&area=2&page={i}' for i in range (1,4)]
 
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
-response = requests.get(url_hh, headers=headers)
+for url_on in url_hh:
+    response = requests.get(url_on, headers=headers)
 
-parsed_jobs = parse_hh_raw_page(response.text)
+    parsed_jobs = parse_hh_raw_page(response.text)
 
-to_db(parsed_jobs)
-# for job in parsed_jobs:
-#     print(f"🔹 {job['title']} (ID: {job['id']})")
-#     print(f"Компания: {job['company']}")
-#     print(f"Зарплата: {job['salary']}")
-#     print(f"Опыт: {job['experience']}")
-#     print(f"График: {job['schedule']}, {job['employment']}")
-#     print("-" * 50)
+    df = pd.DataFrame(parsed_jobs)
+    print (df.columns)
+
+    df = df[df['employment'] != "Полная занятость"]
+
+
+    df_jobs = to_db(parsed_jobs,df)
+    print(df.iloc[0].to_string())
+    # for job in parsed_jobs:
+    #     print(f"{job['title']} (ID: {job['id']})")
+    #     print(f"Компания: {job['company']}")
+    #     print(f"Зарплата: {job['salary']}")
+    #     print(f"Опыт: {job['experience']}")
+    #     print(f"График: {job['schedule']}, {job['employment']}")
+    #     print("-" * 50)

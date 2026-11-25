@@ -8,4 +8,8 @@ requests==2.34.2
 soupsieve==2.10
 typing_extensions==4.16.0
 urllib3==2.8.0
+<<<<<<< HEAD
 psycopg2-binary
+=======
+psycopg2
+>>>>>>> 456c51ac77d1b61a7384698ebee46d99e2607c0c

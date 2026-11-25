@@ -143,7 +143,7 @@ def to_db(df:pd.DataFrame,pastdate:date):
                   index=False
                   )
     else:
-        cur.execute(f'''DELETE FROM it WHERE adding_date < '{past_date}' ''')
+        cur.execute(f'''DELETE FROM it WHERE adding_date < '{pastdate}' ''')
         query = 'SELECT * FROM it'
         exist_vacancies = pd.read_sql(query, con=engine)
     
@@ -185,7 +185,7 @@ def main():
         past_date = today - delta
 
         df_jobs = to_db(df,past_date)
-        print(df_jobs.iloc[0].to_string())
+        print(df_jobs.iloc[:].to_string())
     # for job in parsed_jobs:
     #     print(f"{job['title']} (ID: {job['id']})")
     #     print(f"Компания: {job['company']}")

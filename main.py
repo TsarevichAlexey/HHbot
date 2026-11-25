@@ -3,11 +3,14 @@ import html
 import re
 import psycopg2
 import pandas as pd
+import time
 from datetime import date, timedelta
+from random import randint
 from sqlalchemy import create_engine
 
 from config import *
 
+ONE_HOUR = 3600
 def parse_hh_raw_page(raw_html):
     clean_text = html.unescape(raw_html)
     chunks = clean_text.split('"vacancyId":')
@@ -114,6 +117,7 @@ def to_db(df:pd.DataFrame,pastdate:date):
     cur = connection.cursor()
 
 
+    #Сохранено для подходящего описания архитекутуры таблицы
     cur.execute(f'''CREATE TABLE IF NOT EXISTS it (
                 id INT PRIMARY KEY,
                 url VARCHAR(150) NOT NULL,
@@ -125,8 +129,10 @@ def to_db(df:pd.DataFrame,pastdate:date):
                 employment TEXT,
                 adding_date DATE);
                 ''')
+    # и для этой команды, чтобы не выкинуло ошибку
     cur.execute('''SELECT 1 FROM it LIMIT 1;''')
     vacancies = cur.fetchone()
+    
     engine = create_engine (f'postgresql+psycopg2://{DB_User}:{DB_password}@{DB_host}:{DB_port}/{DB_name}',
                             pool_pre_ping=True, # Важные части для разбора
                             connect_args={"options": "-c statement_timeout=15000"},)
@@ -155,31 +161,31 @@ def to_db(df:pd.DataFrame,pastdate:date):
     engine.dispose()
     return df
 
+def main():
+    url_hh = [f'https://spb.hh.ru/search/vacancy?ored_clusters=true&area=2&search_field=name&search_field=company_name&search_field=description&enable_snippets=false&hhtmSourceLabel=vacancy_search_list&text=python&accept_temporary=false&experience=noExperience&experience=between1And3&page={i}' for i in range (1,4)]
 
-url_hh = [f'https://spb.hh.ru/search/vacancy?ored_clusters=true&area=2&search_field=name&search_field=company_name&search_field=description&enable_snippets=false&hhtmSourceLabel=vacancy_search_list&text=python&accept_temporary=false&experience=noExperience&experience=between1And3&page={i}' for i in range (1,4)]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    for url_on in url_hh:
+        response = requests.get(url_on, headers=headers)
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-}
-for url_on in url_hh:
-    response = requests.get(url_on, headers=headers)
+        parsed_jobs = parse_hh_raw_page(response.text)
 
-    parsed_jobs = parse_hh_raw_page(response.text)
+        df = pd.DataFrame(parsed_jobs)
+        # print (df.head())
 
-    df = pd.DataFrame(parsed_jobs)
-    # print (df.head())
+        today = date.today()
 
-    today = date.today()
-
-    df['adding_date'] = today
-    df['id'] = pd.to_numeric(df['id'],errors='coerce').astype('Int64')
+        df['adding_date'] = today
+        df['id'] = pd.to_numeric(df['id'],errors='coerce').astype('Int64')
 
 
-    delta = timedelta(days=5)
-    past_date = today - delta
+        delta = timedelta(days=5)
+        past_date = today - delta
 
-    df_jobs = to_db(df,past_date)
-    print(df.iloc[0].to_string())
+        df_jobs = to_db(df,past_date)
+        print(df_jobs.iloc[0].to_string())
     # for job in parsed_jobs:
     #     print(f"{job['title']} (ID: {job['id']})")
     #     print(f"Компания: {job['company']}")
@@ -187,3 +193,13 @@ for url_on in url_hh:
     #     print(f"Опыт: {job['experience']}")
     #     print(f"График: {job['schedule']}, {job['employment']}")
     #     print("-" * 50)
+
+def run():
+    try:
+        while True:
+            pause = randint(1,5)
+            main()
+            time.sleep(pause*ONE_HOUR)
+    except KeyboardInterrupt:
+        print('Программа остановлена')
+run()

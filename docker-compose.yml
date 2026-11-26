@@ -21,6 +21,8 @@ services:
       DB_password: $${DB_password}
       DB_name: $${DB_name}
       DB_port: ${DB_port}
+      TOKEN: $(TOKEN)
+      CHAT_ID: $(CHAT_ID)
     depends_on:
       db:
         condition: service_healthy

@@ -1,0 +1,26 @@
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${DB_User}
+      POSTGRES_PASSWORD: ${DB_password}
+      POSTGRES_DB: ${DB_name}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${DB_User} -d $${DB_name}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+  app:
+    build: .
+    environment:
+      # Теперь хост — это имя сервиса db, а не 127.0.0.1
+      DB_host: db
+      DB_User: $${DB_User}
+      DB_password: $${DB_password}
+      DB_name: $${DB_name}
+      DB_port: ${DB_port}
+    depends_on:
+      db:
+        condition: service_healthy

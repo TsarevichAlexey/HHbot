@@ -232,7 +232,7 @@ def main():
             # print(df_jobs.iloc[:].to_string())
             
             telegram_bot(df_jobs)
-        else: 
+        else: pass
    
 
 def run():

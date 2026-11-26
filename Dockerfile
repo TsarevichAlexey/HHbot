@@ -12,5 +12,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # RUN COMMAND
-CMD [ "python","main.py" ]
+CMD [ "python3","main.py" ]
 

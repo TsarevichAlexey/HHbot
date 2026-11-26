@@ -17,9 +17,9 @@ services:
     environment:
       # Теперь хост — это имя сервиса db, а не 127.0.0.1
       DB_host: db
-      DB_User: $${DB_User}
-      DB_password: $${DB_password}
-      DB_name: $${DB_name}
+      DB_User: ${DB_User}
+      DB_password: ${DB_password}
+      DB_name: ${DB_name}
       DB_port: ${DB_port}
       TOKEN: $(TOKEN)
       CHAT_ID: $(CHAT_ID)

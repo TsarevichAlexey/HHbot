@@ -2,6 +2,7 @@ import requests
 import html
 import re
 import psycopg2
+import os
 import pandas as pd
 import time
 from datetime import date, timedelta
@@ -10,7 +11,42 @@ from sqlalchemy import create_engine
 
 from config import *
 
+import traceback
+from dotenv import load_dotenv
+load_dotenv()
+
+TOKEN = os.environ.get('TOKEN')
+CHAT_ID = os.environ.get('CHAT_ID')
 ONE_HOUR = 3600
+
+def send_text(text):
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+    payload = {"chat_id": CHAT_ID, "text": text}
+
+    requests.post(url,data=payload,timeout=10)
+def telegram_bot(df_jobs):
+    # text = df_jobs.iloc[:].to_string()
+    # print(text)
+    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
+
+    try:
+        for _, job in df_jobs.iterrows():
+            vacancy = []
+            vacancy.append(f"{job['title']} (ID: {job['id']})")
+            vacancy.append(f"{job['url']}")
+            vacancy.append(f"Компания: {job['company']}")
+            vacancy.append(f"Зарплата: {job['salary']}")
+            vacancy.append(f"Опыт: {job['experience']}")
+            vacancy.append(f"График: {job['schedule']}, {job['employment']}")
+            vacancy = "\n".join(vacancy)
+
+            payload = {"chat_id": CHAT_ID, "text": vacancy}
+            response = requests.post(url,data=payload,timeout=10)
+            if response.status_code != 200:
+                print(f'API ERROR: {response.status_code} {response.text}')
+    except:
+        print(f"Ошибка: {type(e).__name__}: {e}")
+        traceback.print_exc()
 def parse_hh_raw_page(raw_html):
     clean_text = html.unescape(raw_html)
     chunks = clean_text.split('"vacancyId":')
@@ -106,60 +142,65 @@ def parse_hh_raw_page(raw_html):
     return vacancies
 
 def to_db(df:pd.DataFrame,pastdate:date):
-    # Подсоединение базы данных
-    connection = psycopg2.connect (dbname=f'{DB_name}',
-                                    user=f'{DB_User}',
-                                   password =f'{DB_password}',
-                                   host=f'{DB_host}',
-                                   port=f'{DB_port}')
-    connection.autocommit = True
-    # Курсор 
-    cur = connection.cursor()
+    try:
+        # Подсоединение базы данных
+        connection = psycopg2.connect (dbname=f'{DB_name}',
+                                        user=f'{DB_User}',
+                                    password =f'{DB_password}',
+                                    host=f'{DB_host}',
+                                    port=f'{DB_port}')
+        connection.autocommit = True
+        # Курсор 
+        cur = connection.cursor()
 
 
-    #Сохранено для подходящего описания архитекутуры таблицы
-    cur.execute(f'''CREATE TABLE IF NOT EXISTS it (
-                id INT PRIMARY KEY,
-                url VARCHAR(150) NOT NULL,
-                title VARCHAR(100) NOT NULL,
-                company TEXT,
-                salary TEXT,
-                experience TEXT,
-                schedule TEXT,
-                employment TEXT,
-                adding_date DATE);
-                ''')
-    # и для этой команды, чтобы не выкинуло ошибку
-    cur.execute('''SELECT 1 FROM it LIMIT 1;''')
-    vacancies = cur.fetchone()
-    
-    engine = create_engine (f'postgresql+psycopg2://{DB_User}:{DB_password}@{DB_host}:{DB_port}/{DB_name}',
-                            pool_pre_ping=True, # Важные части для разбора
-                            connect_args={"options": "-c statement_timeout=15000"},)
-    if vacancies is None:
-        df.to_sql(name='it',
-                  con=engine,
-                  if_exists='append', # чтоб не заменяло
-                  index=False
-                  )
-    else:
-        cur.execute(f'''DELETE FROM it WHERE adding_date < '{pastdate}' ''')
-        query = 'SELECT * FROM it'
-        exist_vacancies = pd.read_sql(query, con=engine)
-    
+        #Сохранено для подходящего описания архитекутуры таблицы
+        cur.execute(f'''CREATE TABLE IF NOT EXISTS it (
+                    id INT PRIMARY KEY,
+                    url VARCHAR(150) NOT NULL,
+                    title VARCHAR(100) NOT NULL,
+                    company TEXT,
+                    salary TEXT,
+                    experience TEXT,
+                    schedule TEXT,
+                    employment TEXT,
+                    adding_date DATE);
+                    ''')
+        # и для этой команды, чтобы не выкинуло ошибку
+        cur.execute('''SELECT 1 FROM it LIMIT 1;''')
+        vacancies = cur.fetchone()
+        
+        engine = create_engine (f'postgresql+psycopg2://{DB_User}:{DB_password}@{DB_host}:{DB_port}/{DB_name}',
+                                pool_pre_ping=True, # Важные части для разбора
+                                connect_args={"options": "-c statement_timeout=15000"},)
+        if vacancies is None:
+            df.to_sql(name='it',
+                    con=engine,
+                    if_exists='append', # чтоб не заменяло
+                    index=False
+                    )
+        else:
+            cur.execute(f'''DELETE FROM it WHERE adding_date < '{pastdate}' ''')
+            query = 'SELECT * FROM it'
+            exist_vacancies = pd.read_sql(query, con=engine)
+        
 
-        #ВАЖНО
-        df = df[~df['id'].isin(exist_vacancies['id'])]
+            #ВАЖНО
+            df = df[~df['id'].isin(exist_vacancies['id'])]
 
-        df.to_sql(name='it',
-                con=engine,
-                if_exists='append',
-                index=False)
+            df.to_sql(name='it',
+                    con=engine,
+                    if_exists='append',
+                    index=False)
 
-    cur.close()
-    connection.close()
-    engine.dispose()
-    return df
+        cur.close()
+        connection.close()
+        engine.dispose()
+        return df
+    except Exception as e:
+        print(f"Ошибка: {e}")
+        traceback.print_exc()
+        return pd.DataFrame()
 
 def main():
     url_hh = [f'https://spb.hh.ru/search/vacancy?ored_clusters=true&area=2&search_field=name&search_field=company_name&search_field=description&enable_snippets=false&hhtmSourceLabel=vacancy_search_list&text=python&accept_temporary=false&experience=noExperience&experience=between1And3&page={i}' for i in range (1,4)]
@@ -185,14 +226,12 @@ def main():
         past_date = today - delta
 
         df_jobs = to_db(df,past_date)
-        print(df_jobs.iloc[:].to_string())
-    # for job in parsed_jobs:
-    #     print(f"{job['title']} (ID: {job['id']})")
-    #     print(f"Компания: {job['company']}")
-    #     print(f"Зарплата: {job['salary']}")
-    #     print(f"Опыт: {job['experience']}")
-    #     print(f"График: {job['schedule']}, {job['employment']}")
-    #     print("-" * 50)
+        if len(df_jobs) !=0:
+            # print(df_jobs.iloc[:].to_string())
+            
+            telegram_bot(df_jobs)
+        else: send_text('Ничего не добавилось')
+   
 
 def run():
     try:

@@ -187,6 +187,8 @@ def to_db(df:pd.DataFrame,pastdate:date):
 
             #ВАЖНО
             df = df[~df['id'].isin(exist_vacancies['id'])]
+            df = df[df['employment'] != 'Полная занятость']
+            df = df[df['schedule'] != 'Полный день']
 
             df.to_sql(name='it',
                     con=engine,

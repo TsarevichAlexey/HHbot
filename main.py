@@ -9,6 +9,9 @@ from datetime import date, timedelta
 from random import randint
 from sqlalchemy import create_engine
 
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 from config import *
 
 import traceback
@@ -207,33 +210,63 @@ def to_db(df:pd.DataFrame,pastdate:date):
 def main():
     url_hh = [f'https://spb.hh.ru/search/vacancy?ored_clusters=true&area=2&search_field=name&search_field=company_name&search_field=description&enable_snippets=false&hhtmSourceLabel=vacancy_search_list&text=python&accept_temporary=false&experience=noExperience&experience=between1And3&page={i}' for i in range (1,4)]
 
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    # блокирует, если использовать обычный get
+    # Добавляет полный набор заголовков
+
+    # Создает TCP соединение, которое хранит куки и заголовки, 
+    # позволяет добавить настройки
+    
+    session = requests.Session()
+
+    # Политика повторных подключений
+    retry =  Retry( 
+        total =3, # 3 повтора
+        connect = 3, # 3 повтора на ошибки соединения
+        backoff_factor = 1.5, # экспоненциальная пауза между попытками
+        status_forcelist=[429, 500, 502, 503, 504],  # на какие HTTP-коды повторять
+    )
+    session.headers.update({
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+    "Accept-Language": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7", 
+        })
+    
+
+    adapter = HTTPAdapter(max_retries=retry)
+    # Применяет политики подключения к обоим типам запросов
+    session.mount('https://',adapter)
+    session.mount('https://',adapter)
+    
     for url_on in url_hh:
-        response = requests.get(url_on, headers=headers)
-
-        parsed_jobs = parse_hh_raw_page(response.text)
-
-        df = pd.DataFrame(parsed_jobs)
-        # print (df.head())
-
-        today = date.today()
-
-        df['adding_date'] = today
-        df['id'] = pd.to_numeric(df['id'],errors='coerce').astype('Int64')
-
-
-        delta = timedelta(days=5)
-        past_date = today - delta
-
-        df_jobs = to_db(df,past_date)
-        if len(df_jobs) !=0:
-            # print(df_jobs.iloc[:].to_string())
+        try:  
+            response = session.get(url_on, timeout=30)
             
-            telegram_bot(df_jobs)
-        else: pass
-   
+            parsed_jobs = parse_hh_raw_page(response.text)
+
+            df = pd.DataFrame(parsed_jobs)
+            # print (df.head())
+
+            today = date.today()
+
+            df['adding_date'] = today
+            df['id'] = pd.to_numeric(df['id'],errors='coerce').astype('Int64')
+
+
+            delta = timedelta(days=5)
+            past_date = today - delta
+
+            df_jobs = to_db(df,past_date)
+            if len(df_jobs) !=0:
+                # print(df_jobs.iloc[:].to_string())
+                
+                telegram_bot(df_jobs)
+            else: pass
+        except requests.exceptions.ConnectionError as e:
+            print(f"Соединение оборвано на {url_on}: {e}")
+            continue
+        except requests.exceptions.Timeout:
+            print(f"Таймаут: {url_on}")
+            continue
 
 def run():
     try:

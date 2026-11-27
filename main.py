@@ -262,10 +262,20 @@ def main():
                 telegram_bot(df_jobs)
             else: pass
         except requests.exceptions.ConnectionError as e:
-            print(f"Соединение оборвано на {url_on}: {e}")
+            msg =  f"⚠️ Соединение оборвано\nURL: {url_on}\n{type(e).__name__}: {e}"
+            print(msg)
+            send_text(msg)
             continue
         except requests.exceptions.Timeout:
-            print(f"Таймаут: {url_on}")
+            msg = f"⏱ Таймаут запроса\nURL: {url_on}"
+            print(msg)
+            send_text(msg)
+            continue
+        except Exception as e:
+            msg = f"❌ Ошибка в main()\nURL: {url_on}\n{type(e).__name__}: {e}"
+            print(msg)
+            traceback.print_exc()
+            send_text(msg)
             continue
 
 def run():
